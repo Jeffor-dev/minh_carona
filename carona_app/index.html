@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Transporte | Kaizen</title>
+
+<link rel="manifest" href="manifest.json">
+
+<style>
+  :root {
+    --primary: #4f46e5;
+    --primary-dark: #3730a3;
+    --bg-main: #f8fafc;
+    --card-bg: #ffffff;
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+    --danger: #ef4444;
+    --border: #e2e8f0;
+    --radius: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
+
+  body { background: var(--bg-main); color: var(--text-main); padding-bottom: 40px; }
+
+  .container { width: 100%; max-width: 480px; margin: 0 auto; padding: 20px; }
+
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
+  header h1 { font-size: 1.5rem; font-weight: 700; }
+
+  .card {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    margin-bottom: 20px;
+  }
+
+  .section-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+
+  .field-group { margin-bottom: 16px; }
+
+  input[type="date"], select {
+    width: 100%;
+    padding: 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    font-size: 1rem;
+    outline: none;
+  }
+
+  .btn-primary {
+    width: 100%;
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 14px;
+    border-radius: var(--radius);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .row {
+    background: var(--card-bg);
+    padding: 16px;
+    border-radius: var(--radius);
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid var(--border);
+  }
+
+  .info-left .date { display: block; font-weight: 700; }
+  .info-left .type { font-size: 0.875rem; color: var(--text-muted); }
+
+  .info-right { display: flex; align-items: center; gap: 15px; }
+  .price { font-weight: 700; }
+
+  .btn-delete {
+    background: #fee2e2;
+    color: var(--danger);
+    border: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .footer-summary {
+    margin-top: 30px;
+    border-top: 2px dashed var(--border);
+    padding-top: 20px;
+  }
+
+  .total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+
+  .total-amount { font-size: 1.5rem; font-weight: 800; color: var(--primary); }
+
+  .btn-pdf { background: #f1f5f9; color: #475569; border: 1px solid var(--border); }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+  <header><h1>🚗 Transporte</h1></header>
+
+  <div class="card">
+    <p class="section-title">Novo Registro</p>
+    <div class="field-group"><input type="date" id="data"></div>
+    <div class="field-group">
+      <select id="tipo">
+        <option value="0">Selecionar tipo...</option>
+        <option value="1">Ida</option>
+        <option value="2">Volta</option>
+        <option value="3">Ida e Volta</option>
+      </select>
+    </div>
+    <button class="btn-primary" onclick="salvar()">Salvar Registro</button>
+  </div>
+
+  <div class="list-container">
+    <p class="section-title">Histórico</p>
+    <div id="tabela"></div>
+  </div>
+
+  <div class="footer-summary">
+    <div class="total-row">
+      <span>Total</span>
+      <span class="total-amount">R$ <span id="total">0.00</span></span>
+    </div>
+    <button class="btn-primary btn-pdf" onclick="gerarPDF()">📄 Gerar Relatório PDF</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+
+<script>
+const VALOR = 5.5;
+let db;
+
+const request = indexedDB.open("transporteDB", 1);
+request.onupgradeneeded = e => {
+  db = e.target.result;
+  db.createObjectStore("dias", { keyPath: "data" });
+};
+request.onsuccess = e => { db = e.target.result; carregar(); };
+
+function salvar() {
+  const data = document.getElementById('data').value;
+  const tipo = parseInt(document.getElementById('tipo').value);
+  if (!data || tipo === 0) return alert("Preencha todos os campos");
+  const tx = db.transaction("dias", "readwrite");
+  tx.objectStore("dias").put({ data, tipo });
+  tx.oncomplete = carregar;
+}
+
+function carregar() {
+  const tx = db.transaction("dias", "readonly");
+  tx.objectStore("dias").getAll().onsuccess = e => {
+    const dados = e.target.result.sort((a,b)=>b.data.localeCompare(a.data));
+    const tabela = document.getElementById('tabela');
+    tabela.innerHTML = '';
+    let total = 0;
+    dados.forEach(d => {
+      const valor = calcular(d.tipo);
+      total += valor;
+      const div = document.createElement('div');
+      div.className = 'row';
+      div.innerHTML = `
+        <div class="info-left"><span class="date">${formatar(d.data)}</span><span class="type">${texto(d.tipo)}</span></div>
+        <div class="info-right"><span class="price">R$ ${valor.toFixed(2)}</span>
+        <button class="btn-delete" onclick="excluir('${d.data}')">🗑</button></div>`;
+      tabela.appendChild(div);
+    });
+    document.getElementById('total').textContent = total.toFixed(2);
+  };
+}
+
+function excluir(data){
+  const tx = db.transaction("dias","readwrite");
+  tx.objectStore("dias").delete(data);
+  tx.oncomplete = carregar;
+}
+
+function calcular(t){ return t==3 ? VALOR*2 : (t==0 ? 0 : VALOR); }
+function texto(t){ return ['-','Ida','Volta','Ida e Volta'][t]; }
+function formatar(d){ const [a,m,di]=d.split('-'); return `${di}/${m}/${a}`; }
+
+/* 🔥 FUNÇÃO ATUALIZADA */
+function gerarPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  
+  const hoje = new Date();
+  const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
+  const anoAtual = String(hoje.getFullYear());
+
+  const tx = db.transaction("dias", "readonly");
+  tx.objectStore("dias").getAll().onsuccess = e => {
+    let dados = e.target.result;
+
+    // 🔥 filtra apenas mês atual
+    dados = dados.filter(d => {
+      const [ano, mes] = d.data.split('-');
+      return ano === anoAtual && mes === mesAtual;
+    }).sort((a, b) => a.data.localeCompare(b.data));
+
+    if (dados.length === 0) return alert("Nenhum dado neste mês.");
+
+    const meses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+    const mesAno = `${meses[parseInt(mesAtual)-1]} / ${anoAtual}`;
+
+    doc.setFontSize(22);
+    doc.setTextColor(79, 70, 229);
+    doc.text("Relatório de Transporte - Let Soares", 14, 20);
+
+    doc.setFontSize(12);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Referência: ${mesAno}`, 14, 28);
+
+    const tableBody = dados.map(d => [formatar(d.data), texto(d.tipo), `R$ ${calcular(d.tipo).toFixed(2)}`]);
+    let totalGeral = dados.reduce((acc, d) => acc + calcular(d.tipo), 0);
+
+    doc.autoTable({
+      startY: 35,
+      head: [['Data', 'Descrição', 'Valor']],
+      body: tableBody,
+      headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255] },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { left: 14, right: 14 }
+    });
+
+    const finalY = doc.lastAutoTable.finalY + 10;
+    doc.setDrawColor(226, 232, 240);
+    doc.line(14, finalY, 196, finalY);
+    
+    doc.setFontSize(14);
+    doc.setTextColor(30, 41, 59);
+    doc.setFont(undefined, 'bold');
+    doc.text(`Total Acumulado: R$ ${totalGeral.toFixed(2)}`, 140, finalY + 10, { align: 'right' });
+
+    doc.save(`transporte_${mesAtual}_${anoAtual}.pdf`);
+  };
+}
+</script>
+</body>
+</html>
