@@ -149,7 +149,8 @@
       <span>Total</span>
       <span class="total-amount">R$ <span id="total">0.00</span></span>
     </div>
-    <button class="btn-primary btn-pdf" onclick="gerarPDF()">📄 Gerar Relatório PDF</button>
+      <button class="btn-primary btn-pdf" onclick="gerarPDF()">📄 Gerar Relatório PDF</button>
+      <button class="btn-primary btn-pdf" style="margin-top:10px" onclick="compartilharPDF()">🟢 Compartilhar PDF no WhatsApp</button>
   </div>
 </div>
 
@@ -209,40 +210,32 @@ function texto(t){ return ['-','Ida','Volta','Ida e Volta'][t]; }
 function formatar(d){ const [a,m,di]=d.split('-'); return `${di}/${m}/${a}`; }
 
 /* 🔥 FUNÇÃO ATUALIZADA */
-function gerarPDF() {
+
+async function gerarPDF() {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
-  
   const hoje = new Date();
   const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
   const anoAtual = String(hoje.getFullYear());
 
   const tx = db.transaction("dias", "readonly");
-  tx.objectStore("dias").getAll().onsuccess = e => {
+  tx.objectStore("dias").getAll().onsuccess = async e => {
     let dados = e.target.result;
-
-    // 🔥 filtra apenas mês atual
     dados = dados.filter(d => {
       const [ano, mes] = d.data.split('-');
       return ano === anoAtual && mes === mesAtual;
     }).sort((a, b) => a.data.localeCompare(b.data));
-
     if (dados.length === 0) return alert("Nenhum dado neste mês.");
-
     const meses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
     const mesAno = `${meses[parseInt(mesAtual)-1]} / ${anoAtual}`;
-
     doc.setFontSize(22);
     doc.setTextColor(79, 70, 229);
     doc.text("Relatório de Transporte - Let Soares", 14, 20);
-
     doc.setFontSize(12);
     doc.setTextColor(100, 116, 139);
     doc.text(`Referência: ${mesAno}`, 14, 28);
-
     const tableBody = dados.map(d => [formatar(d.data), texto(d.tipo), `R$ ${calcular(d.tipo).toFixed(2)}`]);
     let totalGeral = dados.reduce((acc, d) => acc + calcular(d.tipo), 0);
-
     doc.autoTable({
       startY: 35,
       head: [['Data', 'Descrição', 'Valor']],
@@ -251,18 +244,55 @@ function gerarPDF() {
       alternateRowStyles: { fillColor: [248, 250, 252] },
       margin: { left: 14, right: 14 }
     });
-
     const finalY = doc.lastAutoTable.finalY + 10;
     doc.setDrawColor(226, 232, 240);
     doc.line(14, finalY, 196, finalY);
-    
     doc.setFontSize(14);
     doc.setTextColor(30, 41, 59);
     doc.setFont(undefined, 'bold');
     doc.text(`Total Acumulado: R$ ${totalGeral.toFixed(2)}`, 140, finalY + 10, { align: 'right' });
-
-    doc.save(`transporte_${mesAtual}_${anoAtual}.pdf`);
+    const fileName = `transporte_${mesAtual}_${anoAtual}.pdf`;
+    // Detecta se está rodando no Capacitor (Android)
+    if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+      // Salva usando o Filesystem do Capacitor
+      const pdfOutput = doc.output('datauristring');
+      const base64 = pdfOutput.split(',')[1];
+      try {
+        await window.Capacitor.Plugins.Filesystem.writeFile({
+          path: fileName,
+          data: base64,
+          directory: 'DOCUMENTS',
+        });
+        alert('PDF salvo em Documentos!');
+      } catch (e) {
+        alert('Erro ao salvar PDF: ' + e.message);
+      }
+    } else {
+      // Web: download normal
+      doc.save(fileName);
+    }
   };
+}
+
+async function compartilharPDF() {
+  const hoje = new Date();
+  const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
+  const anoAtual = String(hoje.getFullYear());
+  const fileName = `transporte_${mesAtual}_${anoAtual}.pdf`;
+  if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+    try {
+      await window.Capacitor.Plugins.Share.share({
+        title: 'Relatório de Transporte',
+        text: 'Segue o relatório de transporte em PDF.',
+        url: `file:///storage/emulated/0/Documents/${fileName}`,
+        dialogTitle: 'Compartilhar PDF',
+      });
+    } catch (e) {
+      alert('Erro ao compartilhar PDF: ' + e.message);
+    }
+  } else {
+    alert('Compartilhamento disponível apenas no app Android.');
+  }
 }
 </script>
 </body>
